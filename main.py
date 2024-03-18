@@ -1,4 +1,4 @@
-# Person-Tresspassing multiple detection - new rdx; 0.0.6 media-server; 2.0.0 person-detection
+# Person-Tresspassing all the detection - it shows all the detected person in the roi if trespasser(s) is(are) there. - new rdx; 0.0.6 media-server; 2.0.0 person-detection
 from rdx import Connector, console_logger
 from shapely.geometry import Polygon, Point
 from typing import Any
@@ -9,6 +9,7 @@ import copy
 import cv2
 import os
 import io
+import sys
 
 from models import *
 
@@ -43,7 +44,7 @@ loaded_camera_ids = {}
 object_class_name = "person"
 max_time_threshold = 0
 
-detected_object_list = []
+# detected_object_list = []
 
 def fetch_default_settings(width, height):
     return {
@@ -219,8 +220,7 @@ def post_process(
                 "detections": copy.deepcopy(detected_objects), 
             }
         ]
-
-        detected_object_list.clear() 
+        # detected_object_list.clear() 
 
     alert_schema["group_name"] = headers["source_name"]
     alert_schema["sources"] = [sources_list[index]["source"].payload()]
@@ -564,73 +564,113 @@ class AppConfigurationSettingsHandler:
 
 class DataProcessor:
     def __init__(self, connector: Connector, service_details: dict) -> None:
-        global detected_object_list
-        self.connector = connector
         self.object_tracker = {}
-
+        self.temp_dict = []
+        self.final_dict = []
+        self.data_keeper = set()
+        self.connector = connector
         self.alert_metadata = {
             "service_name": service_details["SERVICE_NAME"],
-            "service_tags": service_details["SERVICE_SETTINGS"]["SERVICE_TAGS"].split(
-                ","
-            ),
+            "service_tags": service_details["SERVICE_SETTINGS"]["SERVICE_TAGS"].split(","),
             "sources": [],
             "target_service": [],
             "output_data": [],
             "date_time": None,
         }
-
         self.image_storage_path = os.path.join(os.getcwd(), "custom_data")
         if "SERVICE_MOUNTS" in service_details:
             self.image_storage_path = service_details["SERVICE_MOUNTS"]["output_media"]
 
     def process_data(self, data, **kwargs):
-        detected_object_list.clear()
-        transaction_id = kwargs.pop("transaction_id")
-        key = kwargs.pop("key")
-        source_details = kwargs.pop("headers")
+        self.final_dict.clear()
 
         try:
-            camera_present = loaded_camera_ids[source_details["source_id"]]
-        except KeyError:
-            load_configuration_settings(**source_details)
+            self.temp_dict.clear()
 
-        for detected_object in copy.deepcopy(data["detections"]):
-            if detected_object["name"] == object_class_name and detected_object["confidence"] >= 0.5:
-                x_coordinate = (detected_object["x1"] + detected_object["x2"]) // 2
-                y_coordinate = (detected_object["y1"] + detected_object["y4"]) // 2
-
-                for _id in loaded_camera_ids[source_details["source_id"]]["indexes"]:
-                    if Point(x_coordinate, y_coordinate).within(polygons[_id]):
-                        object_id = "{}_{}_{}".format(
-                            source_details["source_id"],
-                            sources_list[_id]["roi"]["roi_name"],
-                            detected_object["object_id"],
+            for key, value in self.object_tracker.items():
+                if value['alert']:
+                    self.data_keeper.add(
+                        (
+                            value['detected_object']['object_id'],
+                            value['detected_object']['confidence'],
+                            value['detected_object']['name'],
+                            value['detected_object']['x1'],
+                            value['detected_object']['y1'],
+                            value['detected_object']['x2'],
+                            value['detected_object']['y2'],
+                            value['detected_object']['x3'],
+                            value['detected_object']['y3'],
+                            value['detected_object']['x4'],
+                            value['detected_object']['y4']
                         )
-                        if object_id not in self.object_tracker:
-                            self.object_tracker[object_id] = {
-                                "created": datetime.datetime.utcnow(),
-                                "alert": False,
-                            }
-                        elif not self.object_tracker[object_id]["alert"]:
-                            if (
-                                datetime.datetime.utcnow()
-                                - self.object_tracker[object_id]["created"]
-                            ).seconds > max_time_threshold:
-                                self.object_tracker[object_id]["alert"] = True
-                                detected_object_list.append(detected_object)
-                                
-        if len(detected_object_list) > 0:
-            post_process(
-                connector=connector,
-                storage_path=self.image_storage_path,
-                alert_schema=copy.deepcopy(self.alert_metadata),
-                index=_id,
-                detected_objects_unprocessed=detected_object_list,
-                key=key,
-                headers=source_details,
-                transaction_id=transaction_id,
-                **data,
-            )
+                    )
+
+            transaction_id = kwargs.pop("transaction_id")
+            key = kwargs.pop("key")
+            source_details = kwargs.pop("headers")
+
+            try:
+                camera_present = loaded_camera_ids[source_details["source_id"]]
+            except KeyError:
+                load_configuration_settings(**source_details)
+
+            loaded_camera = loaded_camera_ids[source_details["source_id"]]["indexes"]
+
+            for detected_object in copy.deepcopy(data["detections"]):
+                if detected_object["name"] == object_class_name and detected_object["confidence"] >= 0.5:
+                    x1, x2 = detected_object["x1"], detected_object["x2"]
+                    y1, y4 = detected_object["y1"], detected_object["y4"]
+                    x_coordinate = (x1 + x2) // 2
+                    y_coordinate = (y1 + y4) // 2
+
+                    for _id in loaded_camera:
+                        if Point(x_coordinate, y_coordinate).within(polygons[_id]):
+
+                            object_id = "{}_{}_{}".format(
+                                source_details["source_id"],
+                                sources_list[_id]["roi"]["roi_name"],
+                                detected_object["object_id"],
+                            )
+
+
+                            if object_id not in self.object_tracker:
+                                self.object_tracker[object_id] = {
+                                    "created": datetime.datetime.utcnow(),
+                                    "alert": False,
+                                    "detected_object": detected_object,
+                                }
+                            else:
+                                if any(item[0] == detected_object["object_id"] for item in self.data_keeper):
+                                    self.temp_dict.append(detected_object)
+
+                            if not self.object_tracker[object_id]["alert"]:
+                                time_diff = (
+                                    datetime.datetime.utcnow() - self.object_tracker[object_id]["created"]
+                                ).seconds
+                                if time_diff > 1:
+                                    self.object_tracker[object_id]["alert"] = True
+                                    self.final_dict.append(detected_object)
+                        
+            if self.final_dict:
+                logger.debug(self.temp_dict)
+                self.final_dict.extend(self.temp_dict)
+                logger.debug(self.final_dict)
+
+                post_process(
+                    connector=self.connector,
+                    storage_path=self.image_storage_path,
+                    alert_schema=copy.deepcopy(self.alert_metadata),
+                    index=_id,
+                    detected_objects_unprocessed=self.final_dict,
+                    key=key,
+                    headers=source_details,
+                    transaction_id=transaction_id,
+                    **data,
+                )
+        except Exception as e:
+            logger.error(
+            "Error on line {}  EXCEPTION: {}".format(sys.exc_info()[-1].tb_lineno, e)
+        )
 
 
 @connector.consume_events
