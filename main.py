@@ -647,14 +647,14 @@ class DataProcessor:
                                 time_diff = (
                                     datetime.datetime.utcnow() - self.object_tracker[object_id]["created"]
                                 ).seconds
-                                if time_diff > 1:
+                                if time_diff >= max_time_threshold:
                                     self.object_tracker[object_id]["alert"] = True
                                     self.final_dict.append(detected_object)
                         
             if self.final_dict:
-                logger.debug(self.temp_dict)
+                # logger.debug(self.temp_dict)
                 self.final_dict.extend(self.temp_dict)
-                logger.debug(self.final_dict)
+                # logger.debug(self.final_dict)
 
                 post_process(
                     connector=self.connector,
