@@ -587,6 +587,12 @@ class DataProcessor:
         try:
             self.temp_dict.clear()
 
+            # for key, value in list(self.object_tracker.items()):
+            #     if len(value.get('detected_object', {})) != 11:
+            #         logger.debug(self.object_tracker)
+            #         del self.object_tracker[key]
+
+            # logger.debug(self.object_tracker)
             for key, value in self.object_tracker.items():
                 if value['alert']:
                     self.data_keeper.add(
@@ -632,12 +638,12 @@ class DataProcessor:
                                 detected_object["object_id"],
                             )
 
-
+                            # logger.debug(detected_object)
                             if object_id not in self.object_tracker:
                                 self.object_tracker[object_id] = {
+                                    "detected_object": copy.deepcopy(detected_object),
                                     "created": datetime.datetime.utcnow(),
                                     "alert": False,
-                                    "detected_object": detected_object,
                                 }
                             else:
                                 if any(item[0] == detected_object["object_id"] for item in self.data_keeper):
