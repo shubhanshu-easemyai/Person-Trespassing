@@ -587,11 +587,6 @@ class DataProcessor:
         try:
             self.temp_dict.clear()
 
-            # for key, value in list(self.object_tracker.items()):
-            #     if len(value.get('detected_object', {})) != 11:
-            #         logger.debug(self.object_tracker)
-            #         del self.object_tracker[key]
-
             # logger.debug(self.object_tracker)
             for key, value in self.object_tracker.items():
                 if value['alert']:
@@ -656,7 +651,16 @@ class DataProcessor:
                                 if time_diff >= max_time_threshold:
                                     self.object_tracker[object_id]["alert"] = True
                                     self.final_dict.append(detected_object)
-                        
+
+            if self.object_tracker:
+                first_entry_id = int(list(self.object_tracker.keys())[0].split("_")[-1])
+                last_entry_id = int(list(self.object_tracker.keys())[-1].split("_")[-1])
+
+                # logger.debug(first_entry_id)
+                # logger.debug(last_entry_id)
+                if last_entry_id - first_entry_id > 1000:
+                    self.object_tracker.clear()
+
             if self.final_dict:
                 # logger.debug(self.temp_dict)
                 self.final_dict.extend(self.temp_dict)
