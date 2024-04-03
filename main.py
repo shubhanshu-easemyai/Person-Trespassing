@@ -120,8 +120,16 @@ def load_configuration_settings(source_id, source_name, **kwargs):
                         "source_name": settings.source_details.source_name
                     }
                 )
-                max_time_threshold = int(roi.get("max_time_threshold", 0))
+                max_time_threshold = int(roi.get("max_time_threshold", 1))
                 loaded_camera_ids[source_id]["indexes"].append(start_index)
+                loaded_camera_ids[source_id]["extra"] = {
+                    "max_time_threshold": int(roi.get("max_time_threshold", 1)),
+                    "source": settings.source_details,
+                    "user": settings.user_details,
+                    "roi": {"cords": roi["cords"], "roi_name": roi["roi_name"]},
+                    "source_name": settings.source_details.source_name,
+                    "source_id": source_id,
+                }
                 start_index += 1
     except Exception as e:
         logger.debug(e)
@@ -625,6 +633,8 @@ class DataProcessor:
                     y_coordinate = (y1 + y4) // 2
 
                     for _id in loaded_camera:
+                        max_time_threshold = loaded_camera_ids[source_details["source_id"]]["extra"]["max_time_threshold"]
+                        
                         if Point(x_coordinate, y_coordinate).within(polygons[_id]):
 
                             object_id = "{}_{}_{}".format(
