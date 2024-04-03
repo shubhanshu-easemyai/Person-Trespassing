@@ -42,7 +42,7 @@ sources_list = []
 polygons = []
 loaded_camera_ids = {}
 object_class_name = "person"
-max_time_threshold = 0
+max_time_threshold = 1
 
 # detected_object_list = []
 
